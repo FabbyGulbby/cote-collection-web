@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { searchQuotes } from "@/lib/search";
+import { searchQuotes } from "../../../lib/search";
 
 export const dynamic = "force-dynamic";
 
