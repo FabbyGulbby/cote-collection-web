@@ -1,51 +1,101 @@
-export const PLATFORM_ALIASES: Array<[RegExp, string]> = [
-  [/\bps5\b|\bplaystation 5\b/i, 'PS5'],
-  [/\bps4\b|\bplaystation 4\b/i, 'PS4'],
-  [/\bps3\b|\bplaystation 3\b/i, 'PS3'],
-  [/\bps2\b|\bplaystation 2\b/i, 'PS2'],
-  [/\bps1\b|\bplaystation 1\b|\bpsx\b/i, 'PS1'],
-  [/\bxbox 360\b|\bx360\b/i, 'Xbox 360'],
-  [/\bxbox one\b|\bxone\b/i, 'Xbox One'],
-  [/\bswitch\b|\bnintendo switch\b/i, 'Switch'],
-  [/\bwii u\b|\bwiiu\b/i, 'Wii U'],
-  [/\bwii\b/i, 'Wii'],
-  [/\bgamecube\b|\bgc\b/i, 'GameCube'],
-  [/\bn64\b|\bnintendo 64\b/i, 'N64'],
-  [/\bsnes\b|\bsuper nintendo\b/i, 'SNES'],
-  [/\bnes\b/i, 'NES'],
-  [/\b3ds\b/i, '3DS'],
-  [/\bds\b/i, 'DS'],
-  [/\bps vita\b|\bvita\b/i, 'PS Vita'],
-  [/\bpsp\b/i, 'PSP']
-];
+import { neon } from '@neondatabase/serverless';
 
-export function parseSearch(input: string) {
-  const raw = input.trim().replace(/\s+/g, ' ');
-  let title = raw;
+const sql = neon(process.env.DATABASE_URL!);
+
+export async function searchQuotes(query: string) {
+  const clean = query.trim();
+  const parts = clean.split(/\s+/);
+
+  const platformAliases: Record<string, string> = {
+    ps1: 'PS1',
+    ps2: 'PS2',
+    ps3: 'PS3',
+    ps4: 'PS4',
+    ps5: 'PS5',
+    psp: 'PSP',
+    vita: 'PS Vita',
+    ds: 'DS',
+    '3ds': '3DS',
+    wii: 'Wii',
+    wiiu: 'Wii U',
+    switch: 'Switch',
+    n64: 'N64',
+    snes: 'SNES',
+    nes: 'NES',
+    gamecube: 'GameCube',
+    gc: 'GameCube',
+    x360: 'Xbox 360',
+    xbox360: 'Xbox 360',
+    xone: 'Xbox One',
+  };
+
   let platform: string | null = null;
-  for (const [rx, canonical] of PLATFORM_ALIASES) {
-    if (rx.test(title)) {
-      platform = canonical;
-      title = title.replace(rx, ' ').replace(/\s+/g, ' ').trim();
-      break;
-    }
+  const titleParts: string[] = [];
+
+  for (const part of parts) {
+    const alias = platformAliases[part.toLowerCase()];
+    if (alias) platform = alias;
+    else titleParts.push(part);
   }
-  const tokens = title.toLowerCase().replace(/[^a-z0-9à-ÿ]+/gi, ' ').trim().split(/\s+/).filter(Boolean);
-  return { raw, title, platform, tokens };
-}
 
-export function marketLabel(price: number | null, q1: number | null, median: number | null, q3: number | null) {
-  if (price == null || median == null) return null;
-  if (q1 != null && price < q1 * 0.85) return 'Très intéressant';
-  if (q1 != null && price <= q1) return 'Bon prix';
-  if (q3 != null && price <= q3) return 'Prix normal';
-  return 'Prix élevé';
-}
+  const title = titleParts.join(' ').trim();
+  const pattern = `%${title}%`;
 
-export function confidenceLabel(value: number) {
-  if (value >= 85) return 'Très forte';
-  if (value >= 65) return 'Forte';
-  if (value >= 45) return 'Moyenne';
-  if (value >= 25) return 'Faible';
-  return 'Très faible';
+  const quotes = platform
+    ? await sql`
+        SELECT platform, canonical_key, q1, median, q3,
+               raw_sample_count, sample_count, confidence,
+               demand_confidence, window_days, updated_at
+        FROM brain.market_quotes_product_v3
+        WHERE platform = ${platform}
+          AND canonical_key ILIKE ${pattern}
+        ORDER BY sample_count DESC, confidence DESC
+        LIMIT 8
+      `
+    : await sql`
+        SELECT platform, canonical_key, q1, median, q3,
+               raw_sample_count, sample_count, confidence,
+               demand_confidence, window_days, updated_at
+        FROM brain.market_quotes_product_v3
+        WHERE canonical_key ILIKE ${pattern}
+        ORDER BY sample_count DESC, confidence DESC
+        LIMIT 8
+      `;
+
+  if (!quotes.length) return [];
+
+  const results = [];
+
+  for (const quote of quotes) {
+    const observations = await sql`
+      SELECT asking_price, total_price, title, observed_at
+      FROM brain.market_observations
+      WHERE platform = ${quote.platform}
+        AND canonical_key_v3 = ${quote.canonical_key}
+        AND market_eligibility_v3 = 'eligible'
+      ORDER BY observed_at DESC
+      LIMIT 1
+    `;
+
+    const obs = observations[0];
+
+    results.push({
+      platform: quote.platform,
+      title: obs?.title ?? quote.canonical_key,
+      canonicalKey: quote.canonical_key,
+      askingPrice: obs?.asking_price == null ? null : Number(obs.asking_price),
+      totalPrice: obs?.total_price == null ? null : Number(obs.total_price),
+      median: quote.median == null ? null : Number(quote.median),
+      q1: quote.q1 == null ? null : Number(quote.q1),
+      q3: quote.q3 == null ? null : Number(quote.q3),
+      observations: Number(quote.sample_count ?? 0),
+      rawObservations: Number(quote.raw_sample_count ?? 0),
+      confidence: Number(quote.confidence ?? 0),
+      demandConfidence: Number(quote.demand_confidence ?? 0),
+      windowDays: Number(quote.window_days ?? 0),
+      updatedAt: quote.updated_at,
+    });
+  }
+
+  return results;
 }
