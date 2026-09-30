@@ -8,6 +8,9 @@ export async function GET(request: NextRequest) {
     const query =
       request.nextUrl.searchParams.get("q")?.trim() ?? "";
 
+    const priceParam =
+      request.nextUrl.searchParams.get("price");
+
     if (query.length < 2) {
       return NextResponse.json(
         { error: "Saisis au moins 2 caractères." },
@@ -15,14 +18,42 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const data = await searchQuotes(query);
+    let evaluatedPrice: number | null = null;
+
+    if (priceParam && priceParam.trim() !== "") {
+      const normalizedPrice =
+        priceParam.replace(",", ".");
+
+      const parsedPrice =
+        Number(normalizedPrice);
+
+      if (
+        !Number.isFinite(parsedPrice) ||
+        parsedPrice < 0
+      ) {
+        return NextResponse.json(
+          { error: "Le prix indiqué n'est pas valide." },
+          { status: 400 }
+        );
+      }
+
+      evaluatedPrice = parsedPrice;
+    }
+
+    const data = await searchQuotes(
+      query,
+      evaluatedPrice
+    );
 
     return NextResponse.json({
       query,
       ...data,
     });
   } catch (error) {
-    console.error("Cote Collection search error:", error);
+    console.error(
+      "Cote Collection search error:",
+      error
+    );
 
     return NextResponse.json(
       {
