@@ -5,7 +5,8 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
   try {
-    const query = request.nextUrl.searchParams.get("q")?.trim() ?? "";
+    const query =
+      request.nextUrl.searchParams.get("q")?.trim() ?? "";
 
     if (query.length < 2) {
       return NextResponse.json(
@@ -14,17 +15,20 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const results = await searchQuotes(query);
+    const data = await searchQuotes(query);
 
     return NextResponse.json({
       query,
-      results,
+      ...data,
     });
   } catch (error) {
     console.error("Cote Collection search error:", error);
 
     return NextResponse.json(
-      { error: "Impossible de consulter le Cerveau Collection." },
+      {
+        error:
+          "Impossible de consulter le Cerveau Collection.",
+      },
       { status: 500 }
     );
   }
