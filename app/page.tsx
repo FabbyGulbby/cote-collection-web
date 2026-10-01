@@ -71,7 +71,7 @@ export default function Home() {
         </h1>
 
         <p>
-          Vérifie rapidement si le prix d'un jeu est
+          Vérifie rapidement si le prix d&apos;un jeu est
           intéressant par rapport au marché.
         </p>
 
@@ -186,8 +186,7 @@ export default function Home() {
               </small>
               <strong>
                 {euro(
-                  r.latestObservation
-                    ?.totalPrice
+                  r.latestObservation?.totalPrice
                 )}
               </strong>
               <span>
@@ -238,11 +237,47 @@ export default function Home() {
               <small>
                 Intérêt collection Antho
               </small>
+
               <strong>
-                {r.collectionInterest.label}
+                {r.collectionInterest?.available
+                  ? r.collectionInterest.label
+                  : 'Indisponible'}
               </strong>
+
               <span>
-                {r.collectionInterest.reason}
+                {r.collectionInterest?.available &&
+                r.collectionInterest.score != null
+                  ? `${r.collectionInterest.reason} · ${r.collectionInterest.label}`
+                  : r.collectionInterest?.reason ??
+                    'Évaluation collection indisponible.'}
+              </span>
+            </article>
+
+            <article className="ownership">
+              <small>
+                Ma collection
+              </small>
+
+              <strong>
+                {!r.ownership?.available
+                  ? 'Vérification indisponible'
+                  : r.ownership.owned
+                    ? '✓ Déjà possédé'
+                    : 'Pas dans ma collection'}
+              </strong>
+
+              <span>
+                {!r.ownership?.available
+                  ? 'La vérification de possession n’a pas répondu.'
+                  : r.ownership.owned
+                    ? [
+                        r.ownership.completeness,
+                        r.ownership.edition,
+                        r.ownership.region,
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')
+                    : 'Aucune correspondance dans la collection actuelle.'}
               </span>
             </article>
           </div>
@@ -282,8 +317,8 @@ export default function Home() {
       )}
 
       <footer>
-        Source : Cerveau Collection / Neon · lecture
-        seule
+        Source : Cerveau Collection / Neon + Collection ·
+        lecture seule
       </footer>
     </main>
   );
