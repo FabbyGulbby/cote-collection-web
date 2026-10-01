@@ -56,7 +56,12 @@ function platformValues(platform?: string | null) {
   return PLATFORM_ALIASES[platform] ?? [platform];
 }
 
-function marketLabel(price: number | null, q1: number, median: number, q3: number) {
+function marketLabel(
+  price: number | null,
+  q1: number,
+  median: number,
+  q3: number
+) {
   if (price === null) return "Prix à comparer";
   if (price <= q1) return "Très intéressant";
   if (price < median) return "Bon prix";
@@ -76,27 +81,34 @@ async function supabaseRpc<T>(
   functionName: string,
   body: Record<string, unknown>
 ): Promise<T | null> {
-  const url = process.env.SUPABASE_URL;
+  const rawUrl = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_PUBLISHABLE_KEY;
 
-  if (!url || !key) {
+  if (!rawUrl || !key) {
     console.error("Configuration Supabase manquante.");
     return null;
   }
 
+  // Accepte aussi bien :
+  // https://xxxxx.supabase.co
+  // que https://xxxxx.supabase.co/rest/v1
+  const supabaseBaseUrl = rawUrl
+    .trim()
+    .replace(/\/+$/, "")
+    .replace(/\/rest\/v1$/i, "");
+
+  const rpcUrl = `${supabaseBaseUrl}/rest/v1/rpc/${functionName}`;
+
   try {
-    const response = await fetch(
-      `${url.replace(/\/$/, "")}/rest/v1/rpc/${functionName}`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          apikey: key,
-        },
-        body: JSON.stringify(body),
-        cache: "no-store",
-      }
-    );
+    const response = await fetch(rpcUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: key,
+      },
+      body: JSON.stringify(body),
+      cache: "no-store",
+    });
 
     if (!response.ok) {
       console.error(
@@ -172,7 +184,10 @@ export async function searchQuotes(
           AND platform = ANY(${platforms})
           AND lower(canonical_key) LIKE ${loosePattern}
         ORDER BY
-          CASE WHEN lower(canonical_key) LIKE ${`${cleanQuery}%`} THEN 0 ELSE 1 END,
+          CASE
+            WHEN lower(canonical_key) LIKE ${`${cleanQuery}%`} THEN 0
+            ELSE 1
+          END,
           sample_count DESC,
           confidence DESC NULLS LAST
         LIMIT 8
@@ -259,11 +274,14 @@ export async function searchQuotes(
             ? null
             : Number(row.demand_confidence),
         updatedAt: row.updated_at,
+
         marketAssessment: {
           label: marketLabel(userPrice ?? null, q1, median, q3),
           userPrice: userPrice ?? null,
         },
+
         confidenceAssessment: confidenceLabel(confidence, sampleCount),
+
         collectionInterest: collectionFit
           ? {
               available: true,
@@ -283,6 +301,7 @@ export async function searchQuotes(
               label: "Indisponible",
               reason: "La source collection n’a pas répondu.",
             },
+
         ownership: ownership
           ? {
               available: true,
@@ -302,6 +321,7 @@ export async function searchQuotes(
               edition: null,
               region: null,
             },
+
         latestObservation: latest
           ? {
               askingPrice:
