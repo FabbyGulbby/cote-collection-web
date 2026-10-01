@@ -3,20 +3,78 @@ import { searchQuotes } from "../../../lib/search";
 
 export const dynamic = "force-dynamic";
 
+const PLATFORM_SUFFIXES: Array<[RegExp, string]> = [
+  [/\s+playstation\s*5$/i, "PS5"],
+  [/\s+ps5$/i, "PS5"],
+  [/\s+playstation\s*4$/i, "PS4"],
+  [/\s+ps4$/i, "PS4"],
+  [/\s+playstation\s*3$/i, "PS3"],
+  [/\s+ps3$/i, "PS3"],
+  [/\s+playstation\s*2$/i, "PS2"],
+  [/\s+ps2$/i, "PS2"],
+  [/\s+playstation\s*1$/i, "PS1"],
+  [/\s+ps1$/i, "PS1"],
+  [/\s+psp$/i, "PSP"],
+  [/\s+(?:ps\s+vita|vita)$/i, "Vita"],
+  [/\s+nintendo\s+3ds$/i, "3DS"],
+  [/\s+3ds$/i, "3DS"],
+  [/\s+nintendo\s+ds$/i, "DS"],
+  [/\s+ds$/i, "DS"],
+  [/\s+wii\s*u$/i, "WiiU"],
+  [/\s+wii$/i, "Wii"],
+  [/\s+nintendo\s+switch$/i, "Switch"],
+  [/\s+switch$/i, "Switch"],
+  [/\s+nintendo\s+64$/i, "N64"],
+  [/\s+n64$/i, "N64"],
+  [/\s+(?:super\s+nintendo|snes)$/i, "SNES"],
+  [/\s+(?:nintendo\s+entertainment\s+system|nes)$/i, "NES"],
+  [/\s+(?:nintendo\s+)?gamecube$/i, "GameCube"],
+  [/\s+xbox\s*360$/i, "Xbox360"],
+  [/\s+xbox\s+one$/i, "XboxOne"],
+];
+
+function splitQuery(rawQuery: string) {
+  for (const [pattern, platform] of PLATFORM_SUFFIXES) {
+    if (pattern.test(rawQuery)) {
+      return {
+        title: rawQuery.replace(pattern, "").trim(),
+        platform,
+      };
+    }
+  }
+
+  return {
+    title: rawQuery.trim(),
+    platform: null as string | null,
+  };
+}
+
 export async function GET(request: NextRequest) {
   try {
-    const query =
+    const rawQuery =
       request.nextUrl.searchParams.get("q")?.trim() ?? "";
 
-    const platform =
+    const explicitPlatform =
       request.nextUrl.searchParams.get("platform")?.trim() || null;
 
     const priceParam =
       request.nextUrl.searchParams.get("price");
 
-    if (query.length < 2) {
+    if (rawQuery.length < 2) {
       return NextResponse.json(
         { error: "Saisis au moins 2 caractères." },
+        { status: 400 }
+      );
+    }
+
+    const parsed = splitQuery(rawQuery);
+
+    const query = parsed.title;
+    const platform = explicitPlatform ?? parsed.platform;
+
+    if (query.length < 2) {
+      return NextResponse.json(
+        { error: "Le titre du jeu est trop court." },
         { status: 400 }
       );
     }
@@ -24,9 +82,7 @@ export async function GET(request: NextRequest) {
     let evaluatedPrice: number | null = null;
 
     if (priceParam && priceParam.trim() !== "") {
-      const normalizedPrice =
-        priceParam.replace(",", ".");
-
+      const normalizedPrice = priceParam.replace(",", ".");
       const parsedPrice = Number(normalizedPrice);
 
       if (
@@ -52,7 +108,9 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       query,
+      platform,
       found: result !== null,
+
       result: result
         ? {
             title: result.canonicalKey,
@@ -69,8 +127,7 @@ export async function GET(request: NextRequest) {
               median: result.medianPrice,
               q3: result.q3Price,
               observations: result.sampleCount,
-              rawObservations:
-                result.rawSampleCount,
+              rawObservations: result.rawSampleCount,
               confidence: result.confidence,
               confidenceLabel:
                 result.confidenceAssessment,
