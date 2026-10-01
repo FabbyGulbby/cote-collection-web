@@ -9,3 +9,5 @@ V1 mobile-first en lecture seule du Cerveau Collection Neon.
 4. `npm run dev`
 
 Le navigateur ne reçoit jamais la chaîne de connexion. Toutes les requêtes Neon passent par `/api/search` côté serveur.
+
+Déploiement actualisé.
