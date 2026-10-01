@@ -8,6 +8,9 @@ export async function GET(request: NextRequest) {
     const query =
       request.nextUrl.searchParams.get("q")?.trim() ?? "";
 
+    const platform =
+      request.nextUrl.searchParams.get("platform")?.trim() || null;
+
     const priceParam =
       request.nextUrl.searchParams.get("price");
 
@@ -24,8 +27,7 @@ export async function GET(request: NextRequest) {
       const normalizedPrice =
         priceParam.replace(",", ".");
 
-      const parsedPrice =
-        Number(normalizedPrice);
+      const parsedPrice = Number(normalizedPrice);
 
       if (
         !Number.isFinite(parsedPrice) ||
@@ -40,14 +42,57 @@ export async function GET(request: NextRequest) {
       evaluatedPrice = parsedPrice;
     }
 
-    const data = await searchQuotes(
+    const results = await searchQuotes(
       query,
+      platform,
       evaluatedPrice
     );
 
+    const result = results[0] ?? null;
+
     return NextResponse.json({
       query,
-      ...data,
+      found: result !== null,
+      result: result
+        ? {
+            title: result.canonicalKey,
+            platform: result.platform,
+            canonicalKey: result.canonicalKey,
+
+            evaluatedPrice,
+
+            marketReading:
+              result.marketAssessment.label,
+
+            quote: {
+              q1: result.q1Price,
+              median: result.medianPrice,
+              q3: result.q3Price,
+              observations: result.sampleCount,
+              rawObservations:
+                result.rawSampleCount,
+              confidence: result.confidence,
+              confidenceLabel:
+                result.confidenceAssessment,
+            },
+
+            collectionInterest:
+              result.collectionInterest,
+
+            ownership:
+              result.ownership,
+
+            latestObservation:
+              result.latestObservation,
+          }
+        : null,
+
+      candidates: results.slice(1).map((item) => ({
+        platform: item.platform,
+        canonicalKey: item.canonicalKey,
+        median: item.medianPrice,
+        observations: item.sampleCount,
+      })),
     });
   } catch (error) {
     console.error(
