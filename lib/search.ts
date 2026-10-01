@@ -2,370 +2,322 @@ import { neon } from "@neondatabase/serverless";
 
 const sql = neon(process.env.DATABASE_URL!);
 
-const PLATFORM_ALIASES: Record<string, string> = {
-  ps1: "PS1",
-  ps2: "PS2",
-  ps3: "PS3",
-  ps4: "PS4",
-  ps5: "PS5",
-  psp: "PSP",
-  vita: "PS Vita",
-  ds: "DS",
-  "3ds": "3DS",
-  wii: "Wii",
-  "wiiu": "Wii U",
-  "wii-u": "Wii U",
-  switch: "Switch",
-  n64: "N64",
-  snes: "SNES",
-  nes: "NES",
-  gamecube: "GameCube",
-  gc: "GameCube",
-  x360: "Xbox 360",
-  xbox360: "Xbox 360",
-  "xbox-360": "Xbox 360",
-  xone: "Xbox One",
-  xboxone: "Xbox One",
-  "xbox-one": "Xbox One",
+const PLATFORM_ALIASES: Record<string, string[]> = {
+  PS1: ["PS1", "PlayStation", "PlayStation 1"],
+  PS2: ["PS2", "PlayStation 2"],
+  PS3: ["PS3", "PlayStation 3"],
+  PS4: ["PS4", "PlayStation 4"],
+  PS5: ["PS5", "PlayStation 5"],
+  PSP: ["PSP"],
+  Vita: ["Vita", "PS Vita", "PlayStation Vita"],
+  DS: ["DS", "Nintendo DS"],
+  "3DS": ["3DS", "Nintendo 3DS"],
+  Wii: ["Wii"],
+  WiiU: ["Wii U", "WiiU"],
+  Switch: ["Switch", "Nintendo Switch"],
+  N64: ["N64", "Nintendo 64"],
+  SNES: ["SNES", "Super Nintendo", "Super Famicom / SNES"],
+  NES: ["NES", "Nintendo Entertainment System", "Famicom / NES"],
+  GameCube: ["GameCube", "Nintendo GameCube"],
+  Xbox360: ["Xbox 360"],
+  XboxOne: ["Xbox One"],
 };
 
-function confidenceLabel(value: number, observations: number) {
-  if (observations <= 1) return "Très faible";
-  if (value >= 85 && observations >= 10) return "Très forte";
-  if (value >= 65 && observations >= 5) return "Bonne";
-  if (value >= 40) return "Moyenne";
-  return "Faible";
+type Ownership = {
+  owned: boolean;
+  displayName?: string;
+  platform?: string;
+  completeness?: string;
+  edition?: string;
+  region?: string;
+};
+
+type CollectionFit = {
+  score?: number;
+  label?: string;
+};
+
+function normalizeSearch(value: string) {
+  return value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
 }
 
-function marketLabel(
-  price: number | null,
-  q1: number | null,
-  median: number | null,
-  q3: number | null
-) {
-  if (price === null || median === null) {
-    return "Prix à renseigner";
-  }
+function makeLoosePattern(value: string) {
+  const words = normalizeSearch(value).split(/\s+/).filter(Boolean);
+  return `%${words.join("%")}%`;
+}
 
-  if (q1 !== null && price < q1 * 0.85) {
-    return "Très intéressant";
-  }
+function platformValues(platform?: string | null) {
+  if (!platform) return [];
+  return PLATFORM_ALIASES[platform] ?? [platform];
+}
 
-  if (q1 !== null && price <= q1) {
-    return "Bon prix";
-  }
-
-  if (q3 !== null && price <= q3) {
-    return "Prix normal";
-  }
-
+function marketLabel(price: number | null, q1: number, median: number, q3: number) {
+  if (price === null) return "Prix à comparer";
+  if (price <= q1) return "Très intéressant";
+  if (price < median) return "Bon prix";
+  if (price <= q3) return "Prix dans le marché";
   return "Prix élevé";
 }
 
-function normalizeSearch(query: string) {
-  let clean = query
-    .trim()
-    .replace(/\s+/g, " ");
-
-  let platform: string | null = null;
-
-  const multiWordPlatforms: Array<[RegExp, string]> = [
-    [/\bxbox\s*360\b/i, "Xbox 360"],
-    [/\bxbox\s*one\b/i, "Xbox One"],
-    [/\bwii\s*u\b/i, "Wii U"],
-    [/\bps\s*vita\b/i, "PS Vita"],
-    [/\bgame\s*cube\b/i, "GameCube"],
-  ];
-
-  for (const [regex, value] of multiWordPlatforms) {
-    if (regex.test(clean)) {
-      platform = value;
-      clean = clean.replace(regex, " ");
-      break;
-    }
-  }
-
-  const parts = clean
-    .split(/\s+/)
-    .filter(Boolean);
-
-  const titleParts: string[] = [];
-
-  for (const part of parts) {
-    const alias =
-      PLATFORM_ALIASES[part.toLowerCase()];
-
-    if (!platform && alias) {
-      platform = alias;
-    } else if (alias && alias === platform) {
-      continue;
-    } else {
-      titleParts.push(part);
-    }
-  }
-
-  return {
-    platform,
-    title: titleParts.join(" ").trim(),
-  };
+function confidenceLabel(confidence: number | null, sampleCount: number) {
+  if (confidence === null) return "Non renseignée";
+  if (sampleCount < 3) return "Faible";
+  if (confidence >= 80) return "Élevée";
+  if (confidence >= 50) return "Moyenne";
+  return "Faible";
 }
 
-function makeLoosePattern(title: string) {
-  const words = title
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, " ")
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean);
+async function supabaseRpc<T>(
+  functionName: string,
+  body: Record<string, unknown>
+): Promise<T | null> {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_PUBLISHABLE_KEY;
 
-  return `%${words.join("%")}%`;
+  if (!url || !key) {
+    console.error("Configuration Supabase manquante.");
+    return null;
+  }
+
+  try {
+    const response = await fetch(
+      `${url.replace(/\/$/, "")}/rest/v1/rpc/${functionName}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: key,
+        },
+        body: JSON.stringify(body),
+        cache: "no-store",
+      }
+    );
+
+    if (!response.ok) {
+      console.error(
+        `RPC Supabase ${functionName} : ${response.status} ${await response.text()}`
+      );
+      return null;
+    }
+
+    return (await response.json()) as T;
+  } catch (error) {
+    console.error(`Erreur RPC Supabase ${functionName}`, error);
+    return null;
+  }
 }
 
 export async function searchQuotes(
   query: string,
-  evaluatedPrice?: number | null
+  platform?: string | null,
+  userPrice?: number | null
 ) {
-  const { platform, title } =
-    normalizeSearch(query);
+  const cleanQuery = normalizeSearch(query);
+  const loosePattern = makeLoosePattern(query);
+  const platforms = platformValues(platform);
 
-  if (!title) {
-    return {
-      found: false,
-      result: null,
-      candidates: [],
-    };
+  if (!cleanQuery) {
+    return [];
   }
 
-  const exactPattern = `%${title}%`;
-  const loosePattern = makeLoosePattern(title);
+  let rows: any[] = [];
 
-  let quotes = platform
-    ? await sql`
+  if (platforms.length > 0) {
+    rows = await sql`
+      SELECT
+        platform,
+        canonical_key,
+        item_kind,
+        raw_sample_count,
+        sample_count,
+        q1_price,
+        median_price,
+        q3_price,
+        min_price,
+        max_price,
+        confidence,
+        demand_confidence,
+        updated_at
+      FROM brain.market_quotes_product_v3
+      WHERE item_kind = 'game'
+        AND platform = ANY(${platforms})
+        AND lower(canonical_key) = ${cleanQuery}
+      ORDER BY sample_count DESC, confidence DESC NULLS LAST
+      LIMIT 8
+    `;
+
+    if (rows.length === 0) {
+      rows = await sql`
         SELECT
           platform,
           canonical_key,
+          item_kind,
+          raw_sample_count,
+          sample_count,
           q1_price,
           median_price,
           q3_price,
-          raw_sample_count,
-          sample_count,
+          min_price,
+          max_price,
           confidence,
           demand_confidence,
-          window_days,
           updated_at
         FROM brain.market_quotes_product_v3
-        WHERE platform = ${platform}
-          AND canonical_key ILIKE ${exactPattern}
+        WHERE item_kind = 'game'
+          AND platform = ANY(${platforms})
+          AND lower(canonical_key) LIKE ${loosePattern}
         ORDER BY
+          CASE WHEN lower(canonical_key) LIKE ${`${cleanQuery}%`} THEN 0 ELSE 1 END,
           sample_count DESC,
-          confidence DESC
-        LIMIT 8
-      `
-    : await sql`
-        SELECT
-          platform,
-          canonical_key,
-          q1_price,
-          median_price,
-          q3_price,
-          raw_sample_count,
-          sample_count,
-          confidence,
-          demand_confidence,
-          window_days,
-          updated_at
-        FROM brain.market_quotes_product_v3
-        WHERE canonical_key ILIKE ${exactPattern}
-        ORDER BY
-          sample_count DESC,
-          confidence DESC
+          confidence DESC NULLS LAST
         LIMIT 8
       `;
-
-  if (!quotes.length && loosePattern !== exactPattern) {
-    quotes = platform
-      ? await sql`
-          SELECT
-            platform,
-            canonical_key,
-            q1_price,
-            median_price,
-            q3_price,
-            raw_sample_count,
-            sample_count,
-            confidence,
-            demand_confidence,
-            window_days,
-            updated_at
-          FROM brain.market_quotes_product_v3
-          WHERE platform = ${platform}
-            AND canonical_key ILIKE ${loosePattern}
-          ORDER BY
-            sample_count DESC,
-            confidence DESC
-          LIMIT 8
-        `
-      : await sql`
-          SELECT
-            platform,
-            canonical_key,
-            q1_price,
-            median_price,
-            q3_price,
-            raw_sample_count,
-            sample_count,
-            confidence,
-            demand_confidence,
-            window_days,
-            updated_at
-          FROM brain.market_quotes_product_v3
-          WHERE canonical_key ILIKE ${loosePattern}
-          ORDER BY
-            sample_count DESC,
-            confidence DESC
-          LIMIT 8
-        `;
-  }
-
-  if (!quotes.length) {
-    return {
-      found: false,
-      result: null,
-      candidates: [],
-    };
-  }
-
-  const quote = quotes[0];
-
-  const observations = await sql`
-    SELECT
-      asking_price,
-      total_price,
-      title,
-      observed_at
-    FROM brain.market_observations
-    WHERE platform = ${quote.platform}
-      AND canonical_key_v3 = ${quote.canonical_key}
-      AND market_eligibility_v3 = 'eligible'
-    ORDER BY observed_at DESC
-    LIMIT 1
-  `;
-
-  const observation = observations[0];
-
-  const askingPrice =
-    observation?.asking_price == null
-      ? null
-      : Number(observation.asking_price);
-
-  const totalPrice =
-    observation?.total_price == null
-      ? null
-      : Number(observation.total_price);
-
-  const q1 =
-    quote.q1_price == null
-      ? null
-      : Number(quote.q1_price);
-
-  const median =
-    quote.median_price == null
-      ? null
-      : Number(quote.median_price);
-
-  const q3 =
-    quote.q3_price == null
-      ? null
-      : Number(quote.q3_price);
-
-  const sampleCount =
-    Number(quote.sample_count ?? 0);
-
-  const confidence =
-    Number(quote.confidence ?? 0);
-
-  const priceToEvaluate =
-    evaluatedPrice != null &&
-    Number.isFinite(evaluatedPrice) &&
-    evaluatedPrice >= 0
-      ? evaluatedPrice
-      : null;
-
-  const candidates = quotes
-    .slice(1)
-    .map((candidate) => ({
-      platform: candidate.platform,
-      canonicalKey: candidate.canonical_key,
-      median:
-        candidate.median_price == null
-          ? null
-          : Number(candidate.median_price),
-      observations:
-        Number(candidate.sample_count ?? 0),
-    }));
-
-  return {
-    found: true,
-
-    result: {
-      platform: quote.platform,
-      title:
-        observation?.title ??
-        quote.canonical_key,
-      canonicalKey: quote.canonical_key,
-
-      evaluatedPrice: priceToEvaluate,
-
-      marketReading: marketLabel(
-        priceToEvaluate,
-        q1,
-        median,
-        q3
-      ),
-
-      latestObservation: {
-        askingPrice,
-        totalPrice,
-        observedAt:
-          observation?.observed_at ?? null,
-      },
-
-      quote: {
-        q1,
-        median,
-        q3,
-
-        observations: sampleCount,
-
-        rawObservations:
-          Number(quote.raw_sample_count ?? 0),
-
+    }
+  } else {
+    rows = await sql`
+      SELECT
+        platform,
+        canonical_key,
+        item_kind,
+        raw_sample_count,
+        sample_count,
+        q1_price,
+        median_price,
+        q3_price,
+        min_price,
+        max_price,
         confidence,
+        demand_confidence,
+        updated_at
+      FROM brain.market_quotes_product_v3
+      WHERE item_kind = 'game'
+        AND lower(canonical_key) LIKE ${loosePattern}
+      ORDER BY
+        CASE WHEN lower(canonical_key) = ${cleanQuery} THEN 0 ELSE 1 END,
+        sample_count DESC,
+        confidence DESC NULLS LAST
+      LIMIT 8
+    `;
+  }
 
-        confidenceLabel:
-          confidenceLabel(
-            confidence,
-            sampleCount
-          ),
+  return Promise.all(
+    rows.map(async (row) => {
+      const latestRows = await sql`
+        SELECT
+          asking_price,
+          total_price,
+          observed_at,
+          source,
+          url
+        FROM brain.market_observations
+        WHERE market_eligibility_v3 = 'eligible'
+          AND item_kind = 'game'
+          AND platform = ${row.platform}
+          AND canonical_key_v3 = ${row.canonical_key}
+        ORDER BY observed_at DESC
+        LIMIT 1
+      `;
 
+      const [ownership, collectionFit] = await Promise.all([
+        supabaseRpc<Ownership>("cote_collection_owned_lookup_v1", {
+          p_title: row.canonical_key,
+          p_platform: row.platform,
+        }),
+        supabaseRpc<CollectionFit>("vinted_collection_fit_v1", {
+          p_title: row.canonical_key,
+          p_platform: row.platform,
+        }),
+      ]);
+
+      const latest = latestRows[0] ?? null;
+      const q1 = Number(row.q1_price);
+      const median = Number(row.median_price);
+      const q3 = Number(row.q3_price);
+      const confidence =
+        row.confidence === null ? null : Number(row.confidence);
+      const sampleCount = Number(row.sample_count ?? 0);
+
+      return {
+        platform: row.platform,
+        canonicalKey: row.canonical_key,
+        itemKind: row.item_kind,
+        rawSampleCount: Number(row.raw_sample_count ?? 0),
+        sampleCount,
+        q1Price: q1,
+        medianPrice: median,
+        q3Price: q3,
+        minPrice: Number(row.min_price),
+        maxPrice: Number(row.max_price),
+        confidence,
         demandConfidence:
-          Number(
-            quote.demand_confidence ?? 0
-          ),
-
-        windowDays:
-          Number(quote.window_days ?? 0),
-
-        updatedAt: quote.updated_at,
-      },
-
-      collectionInterest: {
-        label: "À connecter",
-        reason:
-          "L’intérêt collection sera ajouté dès qu’une source fiable du Cerveau sera identifiée.",
-      },
-    },
-
-    candidates,
-  };
+          row.demand_confidence === null
+            ? null
+            : Number(row.demand_confidence),
+        updatedAt: row.updated_at,
+        marketAssessment: {
+          label: marketLabel(userPrice ?? null, q1, median, q3),
+          userPrice: userPrice ?? null,
+        },
+        confidenceAssessment: confidenceLabel(confidence, sampleCount),
+        collectionInterest: collectionFit
+          ? {
+              available: true,
+              score:
+                typeof collectionFit.score === "number"
+                  ? collectionFit.score
+                  : null,
+              label: collectionFit.label ?? "Non renseigné",
+              reason:
+                typeof collectionFit.score === "number"
+                  ? `Score collection existant : ${collectionFit.score}/100`
+                  : "Évaluation issue du système collection existant.",
+            }
+          : {
+              available: false,
+              score: null,
+              label: "Indisponible",
+              reason: "La source collection n’a pas répondu.",
+            },
+        ownership: ownership
+          ? {
+              available: true,
+              owned: ownership.owned,
+              displayName: ownership.displayName ?? null,
+              platform: ownership.platform ?? null,
+              completeness: ownership.completeness ?? null,
+              edition: ownership.edition ?? null,
+              region: ownership.region ?? null,
+            }
+          : {
+              available: false,
+              owned: null,
+              displayName: null,
+              platform: null,
+              completeness: null,
+              edition: null,
+              region: null,
+            },
+        latestObservation: latest
+          ? {
+              askingPrice:
+                latest.asking_price === null
+                  ? null
+                  : Number(latest.asking_price),
+              totalPrice:
+                latest.total_price === null
+                  ? null
+                  : Number(latest.total_price),
+              observedAt: latest.observed_at,
+              source: latest.source,
+              url: latest.url,
+            }
+          : null,
+      };
+    })
+  );
 }
