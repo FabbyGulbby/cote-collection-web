@@ -23,20 +23,6 @@ const PLATFORM_ALIASES: Record<string, string[]> = {
   XboxOne: ["Xbox One"],
 };
 
-type Ownership = {
-  owned: boolean;
-  displayName?: string;
-  platform?: string;
-  completeness?: string;
-  edition?: string;
-  region?: string;
-};
-
-type CollectionFit = {
-  score?: number;
-  label?: string;
-};
-
 function normalizeSearch(value: string) {
   return value
     .toLowerCase()
@@ -77,53 +63,6 @@ function confidenceLabel(confidence: number | null, sampleCount: number) {
   return "Faible";
 }
 
-async function supabaseRpc<T>(
-  functionName: string,
-  body: Record<string, unknown>
-): Promise<T | null> {
-  const rawUrl = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_PUBLISHABLE_KEY;
-
-  if (!rawUrl || !key) {
-    console.error("Configuration Supabase manquante.");
-    return null;
-  }
-
-  // Accepte aussi bien :
-  // https://xxxxx.supabase.co
-  // que https://xxxxx.supabase.co/rest/v1
-  const supabaseBaseUrl = rawUrl
-    .trim()
-    .replace(/\/+$/, "")
-    .replace(/\/rest\/v1$/i, "");
-
-  const rpcUrl = `${supabaseBaseUrl}/rest/v1/rpc/${functionName}`;
-
-  try {
-    const response = await fetch(rpcUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        apikey: key,
-      },
-      body: JSON.stringify(body),
-      cache: "no-store",
-    });
-
-    if (!response.ok) {
-      console.error(
-        `RPC Supabase ${functionName} : ${response.status} ${await response.text()}`
-      );
-      return null;
-    }
-
-    return (await response.json()) as T;
-  } catch (error) {
-    console.error(`Erreur RPC Supabase ${functionName}`, error);
-    return null;
-  }
-}
-
 export async function searchQuotes(
   query: string,
   platform?: string | null,
@@ -133,9 +72,7 @@ export async function searchQuotes(
   const loosePattern = makeLoosePattern(query);
   const platforms = platformValues(platform);
 
-  if (!cleanQuery) {
-    return [];
-  }
+  if (!cleanQuery) return [];
 
   let rows: any[] = [];
 
@@ -238,23 +175,11 @@ export async function searchQuotes(
         LIMIT 1
       `;
 
-      const [ownership, collectionFit] = await Promise.all([
-        supabaseRpc<Ownership>("cote_collection_owned_lookup_v1", {
-          p_title: row.canonical_key,
-          p_platform: row.platform,
-        }),
-        supabaseRpc<CollectionFit>("vinted_collection_fit_v1", {
-          p_title: row.canonical_key,
-          p_platform: row.platform,
-        }),
-      ]);
-
       const latest = latestRows[0] ?? null;
       const q1 = Number(row.q1_price);
       const median = Number(row.median_price);
       const q3 = Number(row.q3_price);
-      const confidence =
-        row.confidence === null ? null : Number(row.confidence);
+      const confidence = row.confidence === null ? null : Number(row.confidence);
       const sampleCount = Number(row.sample_count ?? 0);
 
       return {
@@ -270,68 +195,19 @@ export async function searchQuotes(
         maxPrice: Number(row.max_price),
         confidence,
         demandConfidence:
-          row.demand_confidence === null
-            ? null
-            : Number(row.demand_confidence),
+          row.demand_confidence === null ? null : Number(row.demand_confidence),
         updatedAt: row.updated_at,
-
         marketAssessment: {
           label: marketLabel(userPrice ?? null, q1, median, q3),
           userPrice: userPrice ?? null,
         },
-
         confidenceAssessment: confidenceLabel(confidence, sampleCount),
-
-        collectionInterest: collectionFit
-          ? {
-              available: true,
-              score:
-                typeof collectionFit.score === "number"
-                  ? collectionFit.score
-                  : null,
-              label: collectionFit.label ?? "Non renseigné",
-              reason:
-                typeof collectionFit.score === "number"
-                  ? `Score collection existant : ${collectionFit.score}/100`
-                  : "Évaluation issue du système collection existant.",
-            }
-          : {
-              available: false,
-              score: null,
-              label: "Indisponible",
-              reason: "La source collection n’a pas répondu.",
-            },
-
-        ownership: ownership
-          ? {
-              available: true,
-              owned: ownership.owned,
-              displayName: ownership.displayName ?? null,
-              platform: ownership.platform ?? null,
-              completeness: ownership.completeness ?? null,
-              edition: ownership.edition ?? null,
-              region: ownership.region ?? null,
-            }
-          : {
-              available: false,
-              owned: null,
-              displayName: null,
-              platform: null,
-              completeness: null,
-              edition: null,
-              region: null,
-            },
-
         latestObservation: latest
           ? {
               askingPrice:
-                latest.asking_price === null
-                  ? null
-                  : Number(latest.asking_price),
+                latest.asking_price === null ? null : Number(latest.asking_price),
               totalPrice:
-                latest.total_price === null
-                  ? null
-                  : Number(latest.total_price),
+                latest.total_price === null ? null : Number(latest.total_price),
               observedAt: latest.observed_at,
               source: latest.source,
               url: latest.url,
