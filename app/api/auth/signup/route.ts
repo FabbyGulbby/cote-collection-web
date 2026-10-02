@@ -21,7 +21,17 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const result = await signUpWithPassword(email, password, displayName);
+  const origin =
+    request.headers.get("x-forwarded-host")
+      ? `${request.headers.get("x-forwarded-proto") || "https"}://${request.headers.get("x-forwarded-host")}`
+      : request.nextUrl.origin;
+
+  const result = await signUpWithPassword(
+    email,
+    password,
+    displayName,
+    `${origin}/`
+  );
   if (!result.ok) {
     return NextResponse.json({ error: result.error }, { status: result.status || 400 });
   }
