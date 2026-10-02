@@ -26,9 +26,11 @@ export type RpcResult<T> = {
   error: string | null;
 };
 
+const DEFAULT_SUPABASE_URL = "https://aqnpnqejdlwwrxfiptjl.supabase.co";
+const DEFAULT_SUPABASE_PUBLISHABLE_KEY = "sb_publishable_PcwEeigTETLLxTGw1XsFEQ_K-yeMkj7";
+
 function supabaseBaseUrl() {
-  const rawUrl = process.env.SUPABASE_URL;
-  if (!rawUrl) throw new Error("SUPABASE_URL manquante.");
+  const rawUrl = process.env.SUPABASE_URL || DEFAULT_SUPABASE_URL;
 
   return rawUrl
     .trim()
@@ -37,9 +39,7 @@ function supabaseBaseUrl() {
 }
 
 function publishableKey() {
-  const key = process.env.SUPABASE_PUBLISHABLE_KEY;
-  if (!key) throw new Error("SUPABASE_PUBLISHABLE_KEY manquante.");
-  return key;
+  return process.env.SUPABASE_PUBLISHABLE_KEY || DEFAULT_SUPABASE_PUBLISHABLE_KEY;
 }
 
 function authError(payload: AuthSessionPayload | null, fallback: string) {
