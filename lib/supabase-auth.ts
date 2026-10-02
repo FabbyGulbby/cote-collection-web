@@ -106,6 +106,7 @@ export async function signInWithPassword(email: string, password: string) {
       ok: false,
       status: response.status,
       error: authError(payload, "Connexion impossible."),
+      user: null,
     };
   }
 
@@ -114,6 +115,7 @@ export async function signInWithPassword(email: string, password: string) {
   return {
     ok: true,
     status: response.status,
+    error: null,
     user: payload.user ?? null,
   };
 }
@@ -140,6 +142,7 @@ export async function signUpWithPassword(
       status: response.status,
       error: authError(payload, "Création du compte impossible."),
       signedIn: false,
+      user: null,
     };
   }
 
@@ -149,6 +152,7 @@ export async function signUpWithPassword(
   return {
     ok: true,
     status: response.status,
+    error: null,
     signedIn,
     user: payload?.user ?? null,
   };
