@@ -7,9 +7,23 @@ import {
 
 export const runtime = "nodejs";
 
-async function activeSession() {
+type ActiveSessionResult =
+  | {
+      ok: true;
+      session: NonNullable<Awaited<ReturnType<typeof getAuthenticatedSession>>>;
+      profile: any;
+    }
+  | {
+      ok: false;
+      error: string;
+      status: number;
+    };
+
+async function activeSession(): Promise<ActiveSessionResult> {
   const session = await getAuthenticatedSession();
-  if (!session) return { error: "not_authenticated" as const, status: 401 };
+  if (!session) {
+    return { ok: false, error: "not_authenticated", status: 401 };
+  }
 
   const profile = await authenticatedRpc<any>(
     "cote_current_profile_v1",
@@ -18,19 +32,23 @@ async function activeSession() {
   );
 
   if (!profile.ok) {
-    return { error: profile.error || "profile_error", status: profile.status || 500 };
+    return {
+      ok: false,
+      error: profile.error || "profile_error",
+      status: profile.status || 500,
+    };
   }
 
   if (!profile.data?.isActive) {
-    return { error: "account_not_active" as const, status: 403 };
+    return { ok: false, error: "account_not_active", status: 403 };
   }
 
-  return { session, profile: profile.data };
+  return { ok: true, session, profile: profile.data };
 }
 
 export async function GET() {
   const auth = await activeSession();
-  if (!("session" in auth)) {
+  if (!auth.ok) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
 
@@ -49,7 +67,7 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   const auth = await activeSession();
-  if (!("session" in auth)) {
+  if (!auth.ok) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
 
