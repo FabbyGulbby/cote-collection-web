@@ -123,9 +123,14 @@ export async function signInWithPassword(email: string, password: string) {
 export async function signUpWithPassword(
   email: string,
   password: string,
-  displayName: string
+  displayName: string,
+  emailRedirectTo?: string
 ) {
-  const response = await authFetch("/auth/v1/signup", {
+  const redirectQuery = emailRedirectTo
+    ? `?redirect_to=${encodeURIComponent(emailRedirectTo)}`
+    : "";
+
+  const response = await authFetch(`/auth/v1/signup${redirectQuery}`, {
     method: "POST",
     body: JSON.stringify({
       email,
