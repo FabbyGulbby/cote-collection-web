@@ -13,7 +13,7 @@ body {
   background: radial-gradient(circle at top, #18213a 0, #0d111b 34%, #090b10 70%);
   color: #f4f6fb;
 }
-button, input { font: inherit; }
+button, input, select { font: inherit; }
 button { cursor: pointer; }
 
 .shell {
@@ -88,7 +88,7 @@ h2 { margin: 0; font-size: 1.55rem; line-height: 1.15; }
 }
 .authTabs button.active { border-color: #7897ff; color: #dfe6ff; background: #1b2743; }
 .authForm { display: grid; gap: 10px; }
-.authForm input, .search input {
+.authForm input, .search input, .search select {
   width: 100%;
   min-height: 52px;
   padding: 0 15px;
@@ -98,7 +98,22 @@ h2 { margin: 0; font-size: 1.55rem; line-height: 1.15; }
   background: #121722;
   color: #fff;
 }
-.authForm input:focus, .search input:focus { border-color: #7d9cff; box-shadow: 0 0 0 3px rgba(125,156,255,.12); }
+.authForm input:focus, .search input:focus, .search select:focus {
+  border-color: #7d9cff;
+  box-shadow: 0 0 0 3px rgba(125,156,255,.12);
+}
+.search select {
+  appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, #8fa4d8 50%),
+    linear-gradient(135deg, #8fa4d8 50%, transparent 50%);
+  background-position:
+    calc(100% - 18px) 22px,
+    calc(100% - 13px) 22px;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  padding-right: 36px;
+}
 .authForm button, .search button {
   min-height: 52px;
   border: 0;
@@ -112,7 +127,22 @@ h2 { margin: 0; font-size: 1.55rem; line-height: 1.15; }
 .pendingCard .secondaryButton { margin-top: 10px; }
 
 .search { display: grid; grid-template-columns: 1fr; gap: 10px; }
+.searchField {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+}
+.searchField > span {
+  padding-left: 2px;
+  color: #8f9bb1;
+  font-size: .72rem;
+  font-weight: 850;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
 .search input::placeholder, .authForm input::placeholder { color: #707b91; }
+.search select:invalid { color: #707b91; }
 .examples {
   display: flex;
   flex-wrap: wrap;
@@ -252,7 +282,10 @@ footer { padding: 22px 4px 0; color: #566176; font-size: .7rem; text-align: cent
 
 @media (min-width: 620px) {
   .shell { padding: 44px 26px 54px; }
-  .search { grid-template-columns: minmax(0,2fr) minmax(120px,.8fr) auto; }
+  .search {
+    grid-template-columns: minmax(0,1.7fr) minmax(170px,1fr) minmax(120px,.7fr) auto;
+    align-items: end;
+  }
   .titleRow { flex-direction: row; align-items: center; justify-content: space-between; }
   .prices { grid-template-columns: repeat(3,1fr); }
   .twoColumns { grid-template-columns: 1fr 1.4fr; }

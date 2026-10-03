@@ -24,6 +24,38 @@ type AdminUser = {
 
 type Result = any;
 
+const PLATFORM_OPTIONS = [
+  ['PS1', 'PlayStation 1'],
+  ['PS2', 'PlayStation 2'],
+  ['PS3', 'PlayStation 3'],
+  ['PS4', 'PlayStation 4'],
+  ['PS5', 'PlayStation 5'],
+  ['PSP', 'PSP'],
+  ['Vita', 'PS Vita'],
+  ['DS', 'Nintendo DS'],
+  ['2DS', 'Nintendo 2DS'],
+  ['3DS', 'Nintendo 3DS'],
+  ['Wii', 'Wii'],
+  ['WiiU', 'Wii U'],
+  ['Switch', 'Nintendo Switch'],
+  ['Switch2', 'Nintendo Switch 2'],
+  ['N64', 'Nintendo 64'],
+  ['GameBoy', 'Game Boy'],
+  ['GBC', 'Game Boy Color'],
+  ['GBA', 'Game Boy Advance'],
+  ['GameCube', 'GameCube'],
+  ['NES', 'NES'],
+  ['SNES', 'Super Nintendo'],
+  ['MegaDrive', 'Mega Drive / Genesis'],
+  ['MasterSystem', 'Master System'],
+  ['Dreamcast', 'Dreamcast'],
+  ['Saturn', 'Saturn'],
+  ['Intellivision', 'Intellivision'],
+  ['Xbox360', 'Xbox 360'],
+  ['XboxOne', 'Xbox One'],
+  ['XboxSeries', 'Xbox Series'],
+] as const;
+
 const euro = (value: number | null | undefined) =>
   value == null
     ? '—'
@@ -50,6 +82,7 @@ export default function Home() {
   const [authMessage, setAuthMessage] = useState('');
 
   const [q, setQ] = useState('');
+  const [platform, setPlatform] = useState('');
   const [price, setPrice] = useState('');
   const [data, setData] = useState<Result | null>(null);
   const [loading, setLoading] = useState(false);
@@ -176,14 +209,17 @@ export default function Home() {
 
   async function submitSearch(e: FormEvent) {
     e.preventDefault();
-    if (q.trim().length < 2) return;
+    if (q.trim().length < 2 || !platform) return;
 
     setLoading(true);
     setError('');
     setData(null);
 
     try {
-      const params = new URLSearchParams({ q: q.trim() });
+      const params = new URLSearchParams({
+        q: q.trim(),
+        platform,
+      });
       if (price.trim()) params.set('price', price.trim());
       const json = await apiJson(`/api/search?${params.toString()}`);
       setData(json);
@@ -258,16 +294,74 @@ export default function Home() {
         <p>Vérifie le prix d’un jeu grâce au cerveau commun, puis compare automatiquement avec ta collection personnelle.</p>
 
         <form onSubmit={submitSearch} className="search">
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Ex. Spec Ops The Line PS3" autoFocus />
-          <input value={price} onChange={(e) => setPrice(e.target.value)} placeholder="Prix vu (€)" inputMode="decimal" />
-          <button disabled={loading}>{loading ? 'Analyse…' : 'Analyser'}</button>
+          <label className="searchField gameField">
+            <span>Jeu</span>
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Ex. GoldenEye"
+              autoFocus
+            />
+          </label>
+
+          <label className="searchField platformField">
+            <span>Plateforme</span>
+            <select
+              value={platform}
+              onChange={(e) => setPlatform(e.target.value)}
+              required
+            >
+              <option value="">Choisir…</option>
+              {PLATFORM_OPTIONS.map(([value, label]) => (
+                <option key={value} value={value}>{label}</option>
+              ))}
+            </select>
+          </label>
+
+          <label className="searchField priceField">
+            <span>Prix vu (€)</span>
+            <input
+              value={price}
+              onChange={(e) => setPrice(e.target.value)}
+              placeholder="Optionnel"
+              inputMode="decimal"
+            />
+          </label>
+
+          <button disabled={loading || !platform}>
+            {loading ? 'Analyse…' : 'Analyser'}
+          </button>
         </form>
 
         <div className="examples">
           Exemples :
-          <button type="button" onClick={() => setQ('GTA 5 PS3')}>GTA 5 PS3</button>
-          <button type="button" onClick={() => setQ('Spec Ops The Line PS3')}>Spec Ops PS3</button>
-          <button type="button" onClick={() => setQ('Hotel Dusk DS')}>Hotel Dusk DS</button>
+          <button
+            type="button"
+            onClick={() => {
+              setQ('GoldenEye');
+              setPlatform('N64');
+            }}
+          >
+            GoldenEye · N64
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setQ('Spec Ops The Line');
+              setPlatform('PS3');
+            }}
+          >
+            Spec Ops · PS3
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setQ('Hotel Dusk');
+              setPlatform('DS');
+            }}
+          >
+            Hotel Dusk · DS
+          </button>
         </div>
       </section>
 
