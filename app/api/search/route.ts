@@ -19,22 +19,40 @@ const PLATFORM_SUFFIXES: Array<[RegExp, string]> = [
   [/\s+playstation\s*1$/i, "PS1"],
   [/\s+ps1$/i, "PS1"],
   [/\s+psp$/i, "PSP"],
-  [/\s+(?:ps\s+vita|vita)$/i, "Vita"],
+  [/\s+(?:playstation\s+vita|ps\s+vita|vita)$/i, "Vita"],
   [/\s+nintendo\s+3ds$/i, "3DS"],
   [/\s+3ds$/i, "3DS"],
+  [/\s+nintendo\s+2ds$/i, "2DS"],
+  [/\s+2ds$/i, "2DS"],
   [/\s+nintendo\s+ds$/i, "DS"],
   [/\s+ds$/i, "DS"],
   [/\s+wii\s*u$/i, "WiiU"],
   [/\s+wii$/i, "Wii"],
+  [/\s+nintendo\s+switch\s*2$/i, "Switch2"],
+  [/\s+switch\s*2$/i, "Switch2"],
   [/\s+nintendo\s+switch$/i, "Switch"],
   [/\s+switch$/i, "Switch"],
   [/\s+nintendo\s+64$/i, "N64"],
   [/\s+n64$/i, "N64"],
+  [/\s+game\s+boy\s+advance$/i, "GBA"],
+  [/\s+gba$/i, "GBA"],
+  [/\s+game\s+boy\s+color$/i, "GBC"],
+  [/\s+gbc$/i, "GBC"],
+  [/\s+game\s+boy$/i, "GameBoy"],
   [/\s+(?:super\s+nintendo|snes)$/i, "SNES"],
   [/\s+(?:nintendo\s+entertainment\s+system|nes)$/i, "NES"],
   [/\s+(?:nintendo\s+)?gamecube$/i, "GameCube"],
+  [/\s+(?:sega\s+)?dreamcast$/i, "Dreamcast"],
+  [/\s+(?:sega\s+)?master\s+system$/i, "MasterSystem"],
+  [/\s+(?:sega\s+)?(?:mega\s+drive|genesis)$/i, "MegaDrive"],
+  [/\s+(?:sega\s+)?saturn$/i, "Saturn"],
+  [/\s+(?:sega\s+)?game\s+gear$/i, "GameGear"],
+  [/\s+intellivision$/i, "Intellivision"],
+  [/\s+xbox\s+series\s+[xs]$/i, "XboxSeries"],
+  [/\s+xbox\s+series$/i, "XboxSeries"],
   [/\s+xbox\s*360$/i, "Xbox360"],
   [/\s+xbox\s+one$/i, "XboxOne"],
+  [/\s+xbox$/i, "Xbox"],
 ];
 
 function splitQuery(rawQuery: string) {
@@ -114,18 +132,44 @@ export async function GET(request: NextRequest) {
 
     let ownership: any = null;
     if (result) {
+      const ownershipTitles = Array.from(
+        new Set(
+          [query, result.canonicalKey]
+            .map((title) => title?.trim())
+            .filter((title): title is string => Boolean(title))
+        )
+      );
+
       const owned = await authenticatedRpc<any>(
-        "cote_owned_lookup_v1",
+        "cote_owned_lookup_v2",
         {
-          p_title: result.canonicalKey,
+          p_titles: ownershipTitles,
           p_platform: result.platform,
         },
         session.accessToken
       );
 
-      ownership = owned.ok
-        ? { available: true, ...(owned.data ?? { owned: false }) }
-        : { available: false, owned: null };
+      if (owned.ok) {
+        ownership = {
+          available: true,
+          ...(owned.data ?? { owned: false }),
+        };
+      } else {
+        // Repli de sécurité : l'ancien lookup reste disponible
+        // si le RPC V2 est temporairement indisponible.
+        const legacyOwned = await authenticatedRpc<any>(
+          "cote_owned_lookup_v1",
+          {
+            p_title: result.canonicalKey,
+            p_platform: result.platform,
+          },
+          session.accessToken
+        );
+
+        ownership = legacyOwned.ok
+          ? { available: true, ...(legacyOwned.data ?? { owned: false }) }
+          : { available: false, owned: null };
+      }
     }
 
     return NextResponse.json({
