@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { searchQuotes } from "../../../lib/search";
+import {
+  searchOwnershipAliases,
+  searchQuotes,
+} from "../../../lib/search";
 import {
   authenticatedRpc,
   getAuthenticatedSession,
@@ -154,6 +157,36 @@ export async function GET(request: NextRequest) {
           available: true,
           ...(owned.data ?? { owned: false }),
         };
+
+        if (!ownership.owned) {
+          const marketAliases = await searchOwnershipAliases(
+            query,
+            result.platform
+          );
+
+          if (marketAliases.length > 0) {
+            const refinedOwned = await authenticatedRpc<any>(
+              "cote_owned_lookup_v2",
+              {
+                p_titles: Array.from(
+                  new Set([
+                    ...ownershipTitles,
+                    ...marketAliases,
+                  ])
+                ),
+                p_platform: result.platform,
+              },
+              session.accessToken
+            );
+
+            if (refinedOwned.ok) {
+              ownership = {
+                available: true,
+                ...(refinedOwned.data ?? { owned: false }),
+              };
+            }
+          }
+        }
       } else {
         // Repli de sécurité : l'ancien lookup reste disponible
         // si le RPC V2 est temporairement indisponible.
