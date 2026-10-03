@@ -55,6 +55,109 @@ function platformValues(platform?: string | null) {
   return PLATFORM_ALIASES[platform] ?? [platform];
 }
 
+const OWNERSHIP_ALIAS_NOISE = new Set([
+  "jeu", "jeux", "game", "video", "videogame",
+  "players", "choice", "boite", "box", "abimee", "abime",
+  "pal", "eur", "europe", "fr", "fra", "francais",
+  "complet", "complete", "cib", "neuf", "new",
+  "sealed", "sigillato", "blister", "lot", "original"
+]);
+
+function ownershipPlatformNoise(platform: string) {
+  const noise = new Set<string>();
+
+  for (const alias of [platform, ...(PLATFORM_ALIASES[platform] ?? [])]) {
+    for (const token of normalizeSearch(alias).split(/\s+/).filter(Boolean)) {
+      noise.add(token);
+    }
+  }
+
+  if (platform === "N64") noise.add("64");
+  if (platform === "Xbox 360") noise.add("360");
+
+  return noise;
+}
+
+function meaningfulOwnershipTokens(value: string, platform: string) {
+  const platformNoise = ownershipPlatformNoise(platform);
+
+  return normalizeSearch(value)
+    .split(/\s+/)
+    .filter(Boolean)
+    .filter((token) => !OWNERSHIP_ALIAS_NOISE.has(token))
+    .filter((token) => !platformNoise.has(token));
+}
+
+function residualSignature(
+  candidate: string,
+  query: string,
+  platform: string
+) {
+  const candidateTokens = meaningfulOwnershipTokens(candidate, platform);
+  const queryTokens = meaningfulOwnershipTokens(query, platform);
+
+  if (queryTokens.length === 0 || candidateTokens.length === 0) return null;
+
+  const remaining = [...candidateTokens];
+
+  for (const token of queryTokens) {
+    const index = remaining.indexOf(token);
+    if (index < 0) return null;
+    remaining.splice(index, 1);
+  }
+
+  return remaining.sort().join(" ");
+}
+
+export async function searchOwnershipAliases(
+  query: string,
+  platform: string
+) {
+  const cleanQuery = normalizeSearch(query);
+  if (cleanQuery.length < 4) return [];
+
+  const loosePattern = makeLoosePattern(query);
+
+  const rows = await sql`
+    SELECT canonical_key, sample_count, confidence
+    FROM brain.market_quotes_product_v3
+    WHERE item_kind = 'game'
+      AND platform = ${platform}
+      AND lower(canonical_key) LIKE ${loosePattern}
+    ORDER BY sample_count DESC, confidence DESC NULLS LAST, canonical_key
+    LIMIT 30
+  `;
+
+  const related = rows
+    .map((row: any) => ({
+      key: String(row.canonical_key),
+      signature: residualSignature(
+        String(row.canonical_key),
+        query,
+        platform
+      ),
+    }))
+    .filter((row) => row.signature !== null);
+
+  if (related.length === 0) return [];
+
+  const nonEmptySignatures = Array.from(
+    new Set(
+      related
+        .map((row) => row.signature)
+        .filter((signature): signature is string => Boolean(signature))
+    )
+  );
+
+  // Si plusieurs extensions significatives coexistent sur la même
+  // plateforme, la requête est trop générique : on ne devine rien.
+  if (nonEmptySignatures.length > 1) return [];
+
+  return Array.from(
+    new Set(related.map((row) => row.key))
+  );
+}
+
 function marketLabel(
   price: number | null,
   q1: number,
